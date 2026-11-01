@@ -12,7 +12,7 @@ The repository does two things:
 
 ![Worked example](examples/output/worked_example.png)
 
-*Worked example (Section 4): an Alloy 617 test at 750 °C / 121 MPa forecast at three check-ins. Every replicate at that condition was removed from training. From loading conditions alone the predicted life is 1,322 h (×). With the early strain data, H3 forecasts 2,700–3,100 h (●). The measured life is 2,632 h.*
+*Worked example (Section 4): a wrought Haynes 282 test at 760 °C / 288 MPa (the H282 best case in Fig. 3 of the manuscript), forecast at three check-ins with that condition removed from training. At the first check-in, after 375 h and 0.29% strain, H3 predicts rupture at 1,824 h (●). The measured life is 1,808 h, and the forecast curve follows the withheld measurements to rupture.*
 
 ---
 
@@ -55,7 +55,8 @@ master_model.py              Full pipeline: data I/O, theta fitting, models, cro
 creep_forecast.py            Forecast an ongoing test (Python API + command line)
 examples/
   worked_example.py          Section 4: replay a held-out test at three check-ins
-  sample_ongoing_test.csv    First 400 h of a test, used in Exercise 1
+                             (any record: python examples/worked_example.py "<path>")
+  sample_ongoing_test.csv    First 563 h of the worked-example test, used in Exercise 1
   output/                    Figure and summary table produced by worked_example.py
 data/
   A617/                      Alloy 617 records (.csv)
@@ -76,8 +77,8 @@ python master_model.py --stage theta-fit
 
 ```bash
 python creep_forecast.py --curve examples/sample_ongoing_test.csv \
-    --material A617 --temperature 750 --stress 121 --strain-units percent \
-    --exclude-condition "A617_750_121.0" --out forecast_output
+    --material H282_w --heat HT_8354 --temperature 760 --stress 288 \
+    --strain-units percent --exclude-condition "H282_w_760_288.0" --out forecast_output
 ```
 
 The command prints a summary and writes `forecast_output/forecast_curve.csv`, `forecast_summary.json` and `forecast.png`. A forecast takes about 1–2 min to load the cohort plus about 1 min to fit. The models are refitted for each forecast at that test's reveal fraction (Section 7).
@@ -105,44 +106,43 @@ result.save("my_test_forecast")                  # CSV + JSON + PNG
 python examples/worked_example.py      # about 5 min; writes examples/output/
 ```
 
-[`examples/worked_example.py`](examples/worked_example.py) replays the completed test `data/A617/750_121_1.csv` as if it were still running:
+[`examples/worked_example.py`](examples/worked_example.py) replays the completed test `data/HT/HT_8354/760_288.xlsx` as if it were still running. This is the wrought Haynes 282 best case shown in Fig. 3 of the manuscript.
 
-1. **Hold out the condition.** All five replicates at A617 / 750 °C / 121 MPa are removed from training (`exclude_conditions=...`). The model has never seen this condition, the same as in the grouped cross-validation of the manuscript.
-2. **Check in three times.** At 15%, 30% and 50% of the condition-only predicted life (1,322 h), the forecaster receives only the strain measured up to that time.
+1. **Hold out the condition.** The H282 / 760 °C / 288 MPa condition is removed from training (`exclude_conditions=...`). The model has never seen it, the same as in the grouped cross-validation of the manuscript.
+2. **Check in three times.** At 20%, 30% and 50% of the condition-only predicted life (1,876 h), the forecaster receives only the strain measured up to that time.
 3. **Score in hindsight.** Because the test actually finished, each forecast is compared with the withheld remainder using the remainder NRMSE of Eq. 11.
 
 | Check-in | Strain so far | H3 rupture life (90% interval) | H3 final strain | Remainder NRMSE |
 |---:|---:|---:|---:|---:|
-| 198 h | 0.21 % | 2,708 h (629 – 11,661 h) | 3.62 % | 0.24 |
-| 396 h | 0.32 % | 2,810 h (693 – 11,401 h) | 2.37 % | 0.12 |
-| 661 h | 0.46 % | 3,139 h (811 – 12,154 h) | 2.75 % | 0.12 |
-| *Measured* | | *2,632 h* | *3.02 %* | |
+| 375 h | 0.29 % | 1,824 h (201 – 16,530 h) | 23.5 % | 0.043 |
+| 563 h | 0.47 % | 2,067 h (381 – 11,212 h) | 21.9 % | 0.118 |
+| 938 h | 1.47 % | 1,971 h (367 – 10,593 h) | 21.7 % | 0.095 |
+| *Measured* | | *1,808 h* | *20.9 %* | |
 
 What this example shows:
 
-* **Early creep data correct the condition-only estimate.** From temperature and stress alone, the model expects rupture at 1,322 h, half the measured life. At the first check-in the bounded P5 update already raises the life by about +0.7 decades. The `prefix correction` line in the printed summary shows this.
-* **The forecast settles as data accumulate.** The remainder error halves between the first and second check-ins.
-* **Warnings are part of the output.** This condition is flagged as outside the training convex hull, because all its replicates were removed. In the manuscript, such out-of-hull conditions had larger errors.
-* **Intervals are wide.** The 90% rupture-life interval spans about one order of magnitude. That is an honest reflection of the data: use the interval, not only the point forecast, when you plan test-frame use or decide when to stop a test.
+* **An accurate forecast from a short prefix.** After only 375 h (about 20% of life, 0.29% strain out of a final 20.9%), H3 predicts rupture within 1% of the measured life and reproduces the whole tertiary acceleration (remainder NRMSE 0.043).
+* **Later check-ins remain close.** The forecasts stay within 15% of the measured life (1,971–2,067 h) and the terminal-strain forecast settles at 21.7–21.9%.
+* **Intervals are wide.** The 90% rupture-life interval spans about one to two orders of magnitude. The intervals are calibrated over all three alloys and every condition, so they are much wider than the error in this case. Use the interval, not only the point forecast, when you plan test-frame use or decide when to stop a test.
 
 The results are stored in `examples/output/worked_example_summary.csv`. The forecasts for each check-in are in `examples/output/check_in_*/`.
 
-One held-out test does not establish accuracy. For aggregate performance across all 323 curves, see the manuscript and Section 8.
+This is a best case, chosen to illustrate the workflow, and does not represent typical accuracy. For aggregate performance across all 323 curves, see the manuscript and Section 8. To replay any other record, pass its path, for example `python examples/worked_example.py "A617/1000_16.csv"`.
 
 ## 5. Exercises
 
 Each exercise needs only Step 1 of the Quick start to have been run.
 
 **Exercise 1: Command-line forecast.**
-Run the Step 2 command above on `examples/sample_ongoing_test.csv` (the first 400 h of the worked-example test). Open `forecast_output/forecast.png` and `forecast_summary.json`.
-*Check:* you should get a condition-only life of 1,322 h and an H3 life of about 2,600 h, close to the 396 h check-in in Section 4. The sample file is thinned to every 8th point, so the numbers differ slightly. The `--exclude-condition` value is a `condition_id` of the form `<material>_<T>_<stress>` (for example `A617_750_121.0`); an ID that does not exist raises an error listing valid ones. Then drop the `--exclude-condition` flag and run it again. How much does the forecast change once the replicates are back in training? Why is the excluded run the fair test?
+Run the Step 2 command above on `examples/sample_ongoing_test.csv` (the first 563 h of the worked-example test). Open `forecast_output/forecast.png` and `forecast_summary.json`.
+*Check:* the result should be close to the 563 h check-in in Section 4. The sample file is thinned to every 15th point, so the numbers differ slightly. The `--exclude-condition` value is a `condition_id` of the form `<material>_<T>_<stress>` (for example `H282_w_760_288.0`); an ID that does not exist raises an error listing valid ones. Then drop the `--exclude-condition` flag and run it again. How much does the forecast change once the replicates are back in training? Why is the excluded run the fair test?
 
 **Exercise 2: How much does early creep help?**
-In Python, compare `forecaster.condition_only_life(...)` with `result.summary["predicted_rupture_life_h"]` for a few held-out tests. Pick tests from each alloy, for example `Grade 91/600_130.csv` and `HT/HT_8354/871_46.xlsx` (for H282 pass `heat_treatment="HT_8354"`). Change `RECORD` in `examples/worked_example.py` to replay them.
+In Python, compare `forecaster.condition_only_life(...)` with `result.summary["predicted_rupture_life_h"]` for a few held-out tests. Pick tests from each alloy, for example the other Fig. 3 best cases `A617/1000_16.csv` and `Grade 91/625_100.csv`, or a harder case such as `A617/750_121_1.csv`. Replay them with `python examples/worked_example.py "<path>"`.
 *Question:* when is the prefix correction (`p5_life_correction_decades`) largest?
 
 **Exercise 3: Forecast at different times.**
-Change `CHECK_INS` in `examples/worked_example.py` to `(0.10, 0.20, 0.30, 0.40, 0.50)`. Plot the remainder NRMSE and the width of the life interval against the reveal fraction.
+Change `CHECK_INS` in `examples/worked_example.py` (default `(0.20, 0.30, 0.50)`) to `(0.10, 0.20, 0.30, 0.40, 0.50)`. Plot the remainder NRMSE and the width of the life interval against the reveal fraction.
 *Question:* how much measured creep is needed before the forecast stops changing much?
 
 **Exercise 4: Bring your own record.**

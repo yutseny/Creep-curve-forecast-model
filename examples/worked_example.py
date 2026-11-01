@@ -1,16 +1,17 @@
 """Worked example: updating a forecast as an ongoing creep test progresses.
 
-A completed Alloy 617 test (750 degC, 121 MPa) is replayed as if it were still
-running.  Every replicate at that condition is removed from training, so the
-model has never seen this condition, which matches the grouped cross-validation
-in the manuscript.  The test is then "checked in" on three times, and at each
-check-in only the strain measured so far is given to the forecaster.  Because
-the test is in fact complete, each forecast can be scored against the withheld
-remainder of the curve.
+A completed wrought Haynes 282 test (heat HT_8354, 760 degC, 288 MPa; the H282
+best case in Fig. 3 of the manuscript) is replayed as if it were still running.
+Its condition is removed from training, so the model has never seen it, which
+matches the grouped cross-validation in the manuscript.  The test is then
+"checked in" on three times, and at each check-in only the strain measured so
+far is given to the forecaster.  Because the test is in fact complete, each
+forecast can be scored against the withheld remainder of the curve.
 
 Run from the repository root, after `python master_model.py --stage theta-fit`:
 
     python examples/worked_example.py
+    python examples/worked_example.py "A617/1000_16.csv"   # any other record
 
 It takes a few minutes: about 1-2 min to load the cohort, then about 1 min per
 check-in.  Outputs go to examples/output/.
@@ -30,11 +31,17 @@ sys.path.insert(0, str(REPO))
 import master_model as mm  # noqa: E402
 from creep_forecast import CreepForecaster, format_summary  # noqa: E402
 
-RECORD = "A617/750_121_1.csv"
+RECORD = "HT/HT_8354/760_288.xlsx"
 # Check-ins as fractions of the condition-only predicted life, inside the
 # validated reveal range 0.10-0.50.
-CHECK_INS = (0.15, 0.30, 0.50)
+CHECK_INS = (0.20, 0.30, 0.50)
 OUT = REPO / "examples" / "output"
+
+# Optional: python examples/worked_example.py "<relative path>" [output dir]
+if len(sys.argv) > 1:
+    RECORD = sys.argv[1]
+if len(sys.argv) > 2:
+    OUT = Path(sys.argv[2])
 
 
 def main():
