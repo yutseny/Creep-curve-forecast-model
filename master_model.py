@@ -2,32 +2,22 @@
 
 Paper
 -----
-"Early creep deformation constrains full-trajectory forecasting in
-high-temperature alloys" (Yi, Zhang, Messner, Chen, Rollett).
+"Early Creep Deformation Improves Physics-Guided Machine Learning Forecasts of
+Creep Trajectories in High-Temperature Alloys" (Yi, Zhang, Messner, Chen,
+Rollett), submitted to Integrating Materials and Manufacturing Innovation.
 
 Purpose
 -------
-The analysis for that manuscript was carried out across ~160 exploratory
-scripts and notebooks in `new fit/` and the dated revision folders, chained
-together at run time by `importlib` module loading.  This file collapses the
-path that actually produced the published numbers into one self-contained
-module, with no cross-script loading and no hidden dependency chain.
+This module reproduces the retrospective benchmark reported in the manuscript:
+theta-projection fitting and screening of the 333 fitted records, then grouped
+cross-validated comparison of the forecasting models M, T0, T1, M2 and H3.
+It consolidates the exploratory scripts used during the study into one
+self-contained file with no cross-script loading.  Constants that set the
+published numbers (seeds, feature lists, hyperparameters, bounds) are
+collected in Section 1.
 
-The original chain that this file replaces was:
-
-    run_theta_h3_tertiary_test.py            (T0/T1 theta, scoring)
-      -> run_2026_07_30_revision.py          (reveal sweep, hull support)
-      -> run_locked_p5_m2_h3_benchmark.py    (P5, M2, H3)
-        -> run_locked_p1_p2_benchmark.py     (Arrhenius power laws, exclusions)
-        -> final_hybrid_nested_cv.py         (fold-safe priors)
-          -> model_v1/final_hybrid_v1.py     (frozen V1 wiring)
-            -> theta_center_uncertainty.py   (condition-only center = model M)
-            -> refined_early_forecast_model.py  (smoothed prefix features)
-              -> omega_material_early_forecast.py (Omega prefix features)
-                -> normalized_shape_curve_model.py (S(x) normalization)
-                  -> model_endpoint_scaling_and_physics.py (raw curve I/O)
-    theta_fit_all_v2.ipynb                   (theta-projection fitting)
-    theta_ML_derived.ipynb                   (R^2 >= 0.95 quality screen)
+To forecast a test that is still running, use `creep_forecast.py`, which
+applies model H3 from this module to a partially observed curve.
 
 Layout
 ------
@@ -56,15 +46,18 @@ they came from.
 
 Usage
 -----
-    python master_model.py --stage all
+    python master_model.py --stage all           # theta-fit, shapes, forecast
     python master_model.py --stage theta-fit     # Section 3 only
     python master_model.py --stage forecast      # Sections 5-10
+    python master_model.py --stage shapes        # Section 4 export
     python master_model.py --reveals 0.20 0.30
+    python master_model.py --data-dir path/to/data --output-dir path/to/out
 """
 
 from __future__ import annotations
 
 import argparse
+import os
 import re
 import warnings
 from pathlib import Path
@@ -96,8 +89,11 @@ warnings.filterwarnings("ignore", category=RuntimeWarning)
 # ==========================================================================
 
 BASE_DIR = Path(__file__).resolve().parent
-DATA_DIR = BASE_DIR / "new fit" / "data"
-OUTPUT_DIR = BASE_DIR / "master_model_output"
+# Repository layout: data/<material folder>/<temperature>_<stress>[_<n>].csv|xlsx
+# Either location can be overridden with the CREEP_DATA_DIR / CREEP_OUTPUT_DIR
+# environment variables (or --data-dir / --output-dir on the command line).
+DATA_DIR = Path(os.environ.get("CREEP_DATA_DIR", BASE_DIR / "data"))
+OUTPUT_DIR = Path(os.environ.get("CREEP_OUTPUT_DIR", BASE_DIR / "master_model_output"))
 
 # Theta fits produced by Section 3; consumed by Section 4 onwards.
 THETA_SUMMARY_FILE = OUTPUT_DIR / "theta_projection_summary.xlsx"
@@ -2162,10 +2158,8 @@ def paired_comparison(frame: pd.DataFrame, reference: str, comparator: str) -> p
 # SCOPE NOTE.  This is plain split-conformal calibration.  The interval numbers
 # published in the manuscript (87.8% coverage at 20% reveal, 91.7% at 30%) came
 # from a heavier composite - a material-stratified Bayesian residual posterior
-# combined with a support-adaptive conformal quantile and tail weighting - in
-# `new fit/run_three_model_uncertainty_study.py`, via
-# `run_bayesian_curve_uncertainty.py` and
-# `run_bayesian_conformal_support_uncertainty.py`.  That construction is not
+# combined with a support-adaptive conformal quantile and tail weighting -
+# described in the manuscript; that construction is not
 # reproduced here.  The bands below are the correct nonconformity score and
 # calibration split, and they reproduce the qualitative finding - coverage near
 # the nominal target with wide intervals - but they should not be quoted as the
@@ -2238,7 +2232,7 @@ MODEL_LABELS = {
 
 def run_theta_fit_stage() -> pd.DataFrame:
     """Sections 2-3: assemble records, fit theta, screen, build modeling table."""
-    OUTPUT_DIR.mkdir(exist_ok=True)
+    OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
     records = discover_records()
     print(f"Assembled creep records: {len(records)}")
@@ -2283,7 +2277,7 @@ def load_modeling_data() -> tuple[pd.DataFrame, dict]:
 
 def run_forecast_stage(reveals=PRIMARY_REVEALS) -> dict[str, pd.DataFrame]:
     """Sections 5-11: the full grouped cross-validated forecast comparison."""
-    OUTPUT_DIR.mkdir(exist_ok=True)
+    OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
     data, curve_cache = load_modeling_data()
 
     curve_rows: list[dict] = []
@@ -2497,7 +2491,7 @@ def run_forecast_stage(reveals=PRIMARY_REVEALS) -> dict[str, pd.DataFrame]:
 
 def run_shape_stage() -> pd.DataFrame:
     """Section 4: export per-specimen normalized shapes and material medians."""
-    OUTPUT_DIR.mkdir(exist_ok=True)
+    OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
     data, curve_cache = load_modeling_data()
     shapes = material_normalized_shape_table(data, curve_cache)
 
@@ -2532,11 +2526,27 @@ def parse_args() -> argparse.Namespace:
         default=list(PRIMARY_REVEALS),
         help="Nominal reveal fractions to evaluate (default: 0.20 0.30).",
     )
+    parser.add_argument("--data-dir", type=Path, default=None,
+                        help=f"Creep-record root (default: {DATA_DIR}).")
+    parser.add_argument("--output-dir", type=Path, default=None,
+                        help=f"Where results are written (default: {OUTPUT_DIR}).")
     return parser.parse_args()
+
+
+def set_paths(data_dir: Path | None = None, output_dir: Path | None = None) -> None:
+    """Redirect the data and output locations used by every stage."""
+    global DATA_DIR, OUTPUT_DIR, THETA_SUMMARY_FILE
+    if data_dir is not None:
+        DATA_DIR = Path(data_dir)
+        RAW_CURVE_CACHE.clear()
+    if output_dir is not None:
+        OUTPUT_DIR = Path(output_dir)
+        THETA_SUMMARY_FILE = OUTPUT_DIR / "theta_projection_summary.xlsx"
 
 
 def main() -> None:
     args = parse_args()
+    set_paths(args.data_dir, args.output_dir)
     if args.stage in {"all", "theta-fit"}:
         run_theta_fit_stage()
     if args.stage in {"all", "shapes"}:

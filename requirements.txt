@@ -1,0 +1,7 @@
+# Tested with Python 3.9 and the versions below; newer releases are expected to work.
+numpy>=1.23        # tested 2.0.2
+pandas>=1.5        # tested 2.3.3
+scipy>=1.10        # tested 1.13.1
+scikit-learn>=1.2  # tested 1.6.1
+openpyxl>=3.0      # reads the .xlsx creep records
+matplotlib>=3.6    # optional: forecast plots and the worked example; tested 3.9.2
